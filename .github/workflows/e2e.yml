@@ -1,0 +1,145 @@
+name: E2E
+
+on:
+  workflow_dispatch:
+    inputs:
+      grep:
+        description: Only run tests whose title matches (e.g. SC-012 or @smoke)
+        required: false
+        default: ''
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  BASE_URL: ${{ vars.BASE_URL || 'https://conduit.bondaracademy.com' }}
+  API_URL: ${{ vars.API_URL || 'https://conduit-api.bondaracademy.com/api' }}
+  E2E_EXTRA_HEADERS: ${{ secrets.E2E_EXTRA_HEADERS }}
+  GREP: ${{ inputs.grep }}
+
+jobs:
+  checks:
+    name: lint / types / guards
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run e2e:check-ids
+      - run: npm run e2e:check-plans
+
+  api:
+    name: api e2e
+    needs: checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright test --config apps/conduit-api-e2e/playwright.config.ts ${GREP:+--grep "$GREP"}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: blob-api
+          path: apps/conduit-api-e2e/blob-report
+          retention-days: 3
+          if-no-files-found: ignore
+
+  ui:
+    name: ui e2e (${{ matrix.shard }}/${{ strategy.job-total }})
+    needs: checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      - name: Cache Playwright browsers
+        id: browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - if: steps.browsers.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+      - if: steps.browsers.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+
+      - run: npx playwright test --config apps/conduit-e2e/playwright.config.ts --shard ${{ matrix.shard }}/${{ strategy.job-total }} ${GREP:+--grep "$GREP"}
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: blob-ui-${{ matrix.shard }}
+          path: apps/conduit-e2e/blob-report
+          retention-days: 3
+          if-no-files-found: ignore
+
+  report:
+    name: report (${{ matrix.suite }})
+    needs: [api, ui]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [api, ui]
+    env:
+      SLACK_WEBHOOK: ${{ secrets.SLACK_E2E_WEBHOOK }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: blob-${{ matrix.suite }}*
+          path: blob-reports
+          merge-multiple: true
+
+      - name: Merge shards into one report
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_NAME: results.json
+        run: npx playwright merge-reports --reporter html,json blob-reports
+
+      - name: Summarize
+        id: summary
+        run: node .github/scripts/e2e-summary.mjs "Conduit ${{ matrix.suite }}" results.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: e2e-report-${{ matrix.suite }}
+          path: playwright-report
+          retention-days: 14
+
+      - name: Notify Slack
+        if: ${{ env.SLACK_WEBHOOK != '' && steps.summary.outputs.failed_count != '0' }}
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          HEADLINE: ${{ steps.summary.outputs.headline }}
+          FAILED_LIST: ${{ steps.summary.outputs.failed_list }}
+        run: |
+          jq -n --arg text "$HEADLINE"$'\n'"$FAILED_LIST"$'\n'"<$RUN_URL|Open the run>" '{text: $text}' \
+            | curl -sf -X POST -H 'Content-Type: application/json' --data @- "$SLACK_WEBHOOK"

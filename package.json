@@ -1,0 +1,26 @@
+{
+  "name": "playwright-e2e-architecture",
+  "private": true,
+  "scripts": {
+    "e2e:ui": "playwright test --config apps/conduit-e2e/playwright.config.ts",
+    "e2e:api": "playwright test --config apps/conduit-api-e2e/playwright.config.ts",
+    "e2e:check-ids": "node scripts/check-scenario-ids.mjs",
+    "e2e:check-plans": "node scripts/check-all-plans.mjs",
+    "lint": "eslint .",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "format": "prettier --write .",
+    "prepare": "lefthook install"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.65.0",
+    "@types/node": "^26.6.6",
+    "dotenv": "^18.0.10",
+    "eslint": "^10.14.0",
+    "eslint-plugin-playwright": "^2.12.2",
+    "lefthook": "^2.2.2",
+    "prettier": "^3.10.1",
+    "typescript": "^5.9",
+    "typescript-eslint": "^8.72.2"
+  }
+}

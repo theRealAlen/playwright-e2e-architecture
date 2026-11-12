@@ -1,0 +1,24 @@
+pre-commit:
+  parallel: true
+  jobs:
+    - name: prettier
+      glob: '*.{ts,mjs,json,md,yml}'
+      run: npx prettier --write {staged_files}
+      stage_fixed: true
+
+    - name: eslint
+      glob: '*.{ts,mjs}'
+      run: npx eslint --fix {staged_files}
+      stage_fixed: true
+
+pre-push:
+  parallel: true
+  jobs:
+    - name: scenario-ids
+      run: node scripts/check-scenario-ids.mjs
+
+    - name: plan-rows
+      run: node scripts/check-all-plans.mjs
+
+    - name: typecheck
+      run: npx tsc -p tsconfig.json --noEmit

@@ -1,0 +1,9 @@
+# <Sub feature> Tests
+
+**Spec:** `<file>.spec.ts`
+**Feature:** <Main> > <Sub>
+**Tags:** `@<area>`
+
+| SC | Test | Status | Description |
+|----|------|--------|-------------|
+| SC-NNN | <test title, verbatim> | Automated | <the behaviour it guards, one sentence> |

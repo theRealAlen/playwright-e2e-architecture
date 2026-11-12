@@ -1,0 +1,18 @@
+import { createArticle } from '@e2e/utils';
+import { expect, test } from '../../../src/fixtures/test.fixture';
+
+test.describe('<Area> > <Sub-area>', () => {
+  test.describe('Scenario: <what this guards> - SC-NNN', { tag: ['@<area>'] }, () => {
+    test('<Observable behaviour, present tense>', async ({ somePage, apiClient, cleanup }) => {
+      const article = await createArticle(apiClient);
+      cleanup.add(`delete article ${article.slug}`, () => apiClient.delete(`articles/${article.slug}`));
+
+      await somePage.goto(article.slug);
+      await somePage.waitForLoad();
+
+      await somePage.doTheThing();
+
+      await expect(somePage.result).toHaveText('<expected>');
+    });
+  });
+});
